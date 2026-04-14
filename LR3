@@ -1,0 +1,144 @@
+from enum import Enum
+import uuid
+
+# 1. Перелічуваний тип (Enum)111
+class Category(Enum):
+    CLOTHING = "Одяг"
+    SHOES = "Взуття"
+    ACCESSORIES = "Аксесуари"
+
+# 2. Базовий клас
+class Product:
+    def __init__(self, name: str, category: Category, base_price: float):
+        self._id = str(uuid.uuid4())[:8]
+        self.name = name
+        self.category = category
+        self.base_price = base_price  # Виклик сетера для валідації
+
+    @property
+    def product_id(self):
+        return self._id
+
+    @property
+    def base_price(self) -> float:
+        return self._base_price
+
+    @base_price.setter
+    def base_price(self, value: float):
+        if value < 0:
+            raise ValueError("Базова ціна товару не може бути від'ємною!")
+        self._base_price = value
+
+    # Метод, який буде поліморфно перевизначено
+    def calculate_final_price(self) -> float:
+        return self.base_price
+
+    def get_info(self) -> str:
+        return f"[{self._id}] {self.name} | {self.category.value} | Standard | Ціна: {self.calculate_final_price():.2f} грн"
+
+# 3. Класи-нащадки (Наслідування та Поліморфізм)
+class DiscountedProduct(Product):
+    def __init__(self, name: str, category: Category, base_price: float, discount_percent: float):
+        super().__init__(name, category, base_price)
+        if not (0 <= discount_percent <= 100):
+            raise ValueError("Знижка має бути в межах від 0 до 100 відсотків!")
+        self.discount_percent = discount_percent
+
+    def calculate_final_price(self) -> float:
+        return self.base_price * (1 - self.discount_percent / 100)
+
+    def get_info(self) -> str:
+        return f"[{self.product_id}] {self.name} | {self.category.value} | Знижка {self.discount_percent}% | Ціна: {self.calculate_final_price():.2f} грн"
+
+class PremiumProduct(Product):
+    def __init__(self, name: str, category: Category, base_price: float, packaging_fee: float):
+        super().__init__(name, category, base_price)
+        if packaging_fee < 0:
+             raise ValueError("Вартість пакування не може бути від'ємною!")
+        self.packaging_fee = packaging_fee
+
+    def calculate_final_price(self) -> float:
+        return self.base_price + self.packaging_fee
+
+    def get_info(self) -> str:
+        return f"[{self.product_id}] {self.name} | {self.category.value} | Premium (+{self.packaging_fee} грн пакування) | Ціна: {self.calculate_final_price():.2f} грн"
+
+# 4. Клас-менеджер (Композиція)
+class StoreManager:
+    def __init__(self):
+        self._inventory = []
+
+    def add_product(self, product: Product):
+        self._inventory.append(product)
+        print(f"✅ Успішно додано: {product.get_info()}")
+
+    def show_all(self):
+        print("\n--- Каталог товарів ---")
+        if not self._inventory:
+            print("Каталог порожній.")
+        for p in self._inventory:
+            print(p.get_info())
+        print("-----------------------")
+
+# 5. Блок інтерактивної демонстрації
+if __name__ == "__main__":
+    manager = StoreManager()
+
+    while True:
+        print("\n=== Меню управління магазином ===")
+        print("1. Додати звичайний товар")
+        print("2. Додати акційний товар")
+        print("3. Додати преміум товар")
+        print("4. Показати каталог")
+        print("5. Створити помилку (Краш-тест)")
+        print("0. Вийти")
+        
+        choice = input("Оберіть дію: ")
+
+        if choice == "0":
+            print("Роботу завершено.")
+            break
+        
+        elif choice == "4":
+            manager.show_all()
+            
+        elif choice == "5":
+            try:
+                print("\n[Спроба створити товар з ціною -500]")
+                # Цей код викличе ValueError з сетера base_price
+                invalid_product = Product("Бракована куртка", Category.CLOTHING, -500)
+            except ValueError as e:
+                print(f"❌ СПІЙМАНО ПОМИЛКУ: {e}")
+                
+        elif choice in ["1", "2", "3"]:
+            try:
+                name = input("Введіть назву товару: ")
+                
+                print("Доступні категорії: 1-Одяг, 2-Взуття, 3-Аксесуари")
+                cat_input = input("Оберіть категорію: ")
+                if cat_input == "1": category = Category.CLOTHING
+                elif cat_input == "2": category = Category.SHOES
+                elif cat_input == "3": category = Category.ACCESSORIES
+                else:
+                    raise ValueError("Невідома категорія!")
+
+                base_price = float(input("Введіть базову ціну (грн): "))
+
+                if choice == "1":
+                    product = Product(name, category, base_price)
+                elif choice == "2":
+                    discount = float(input("Введіть відсоток знижки: "))
+                    product = DiscountedProduct(name, category, base_price, discount)
+                elif choice == "3":
+                    fee = float(input("Введіть вартість пакування (грн): "))
+                    product = PremiumProduct(name, category, base_price, fee)
+
+                manager.add_product(product)
+
+            # Перехоплення помилок перетворення типів (наприклад, літери замість цифр)
+            # та помилок нашої бізнес-логіки (від'ємна ціна тощо)
+            except ValueError as e:
+                print(f"❌ ПОМИЛКА ВВЕДЕННЯ/ВАЛІДАЦІЇ: {e}")
+                print("Спробуйте додати товар ще раз, використовуючи коректні дані.")
+        else:
+            print("❌ Невідома команда.")
