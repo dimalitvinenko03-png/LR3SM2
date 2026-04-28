@@ -1,144 +1,103 @@
 from enum import Enum
-import uuid
+from dataclasses import dataclass
+from datetime import datetime
 
-# 1. Перелічуваний тип (Enum)111
-class Category(Enum):
-    CLOTHING = "Одяг"
-    SHOES = "Взуття"
-    ACCESSORIES = "Аксесуари"
+# 1. Enum для спеціалізацій
+class DoctorSpecialty(Enum):
+    THERAPIST = "1"
+    STOMATOLOGIST = "2"
+    CARDIOLOGIST = "3"
 
-# 2. Базовий клас
-class Product:
-    def __init__(self, name: str, category: Category, base_price: float):
-        self._id = str(uuid.uuid4())[:8]
-        self.name = name
-        self.category = category
-        self.base_price = base_price  # Виклик сетера для валідації
+# Специфіка: Dataclass для картки пацієнта
+@dataclass
+class PatientCard:
+    full_name: str
+    age: int
+    blood_group: str
+class Appointment:
+    def __init__(self, patient: PatientCard, specialty: DoctorSpecialty, time_str: str, cost: float):
+        # 5. Архітектурний краш-тест
+        if patient.age <= 0 or patient.age > 120:
+            raise ValueError(f"Некоректний вік: {patient.age}. Пацієнт має бути живою людиною!")
+        if cost < 0:
+            raise ValueError(f"Ціна {cost} не може бути від'ємною!")
+        
+        self.patient = patient
+        self.specialty = specialty
+        # Перетворюємо рядок у формат часу для сортування
+        self.time = datetime.strptime(time_str, "%H:%M")
+        self.cost = cost
 
-    @property
-    def product_id(self):
-        return self._id
+    # Специфіка: Сортування за часом
+    def __lt__(self, other):
+        return self.time < other.time
 
-    @property
-    def base_price(self) -> float:
-        return self._base_price
+    def get_info(self):
+        return f"{self.time.strftime('%H:%M')} | {self.patient.full_name}"
+class Consultation(Appointment):
+    def __init__(self, patient, specialty, time, cost, reason):
+        super().__init__(patient, specialty, time, cost)
+        self.reason = reason
 
-    @base_price.setter
-    def base_price(self, value: float):
-        if value < 0:
-            raise ValueError("Базова ціна товару не може бути від'ємною!")
-        self._base_price = value
+    def get_info(self): # Поліморфізм
+        return f"[Консультація] {super().get_info()} (Причина: {self.reason})"
 
-    # Метод, який буде поліморфно перевизначено
-    def calculate_final_price(self) -> float:
-        return self.base_price
+class Procedure(Appointment):
+    def __init__(self, patient, specialty, time, cost, room):
+        super().__init__(patient, specialty, time, cost)
+        self.room = room
 
-    def get_info(self) -> str:
-        return f"[{self._id}] {self.name} | {self.category.value} | Standard | Ціна: {self.calculate_final_price():.2f} грн"
-
-# 3. Класи-нащадки (Наслідування та Поліморфізм)
-class DiscountedProduct(Product):
-    def __init__(self, name: str, category: Category, base_price: float, discount_percent: float):
-        super().__init__(name, category, base_price)
-        if not (0 <= discount_percent <= 100):
-            raise ValueError("Знижка має бути в межах від 0 до 100 відсотків!")
-        self.discount_percent = discount_percent
-
-    def calculate_final_price(self) -> float:
-        return self.base_price * (1 - self.discount_percent / 100)
-
-    def get_info(self) -> str:
-        return f"[{self.product_id}] {self.name} | {self.category.value} | Знижка {self.discount_percent}% | Ціна: {self.calculate_final_price():.2f} грн"
-
-class PremiumProduct(Product):
-    def __init__(self, name: str, category: Category, base_price: float, packaging_fee: float):
-        super().__init__(name, category, base_price)
-        if packaging_fee < 0:
-             raise ValueError("Вартість пакування не може бути від'ємною!")
-        self.packaging_fee = packaging_fee
-
-    def calculate_final_price(self) -> float:
-        return self.base_price + self.packaging_fee
-
-    def get_info(self) -> str:
-        return f"[{self.product_id}] {self.name} | {self.category.value} | Premium (+{self.packaging_fee} грн пакування) | Ціна: {self.calculate_final_price():.2f} грн"
-
-# 4. Клас-менеджер (Композиція)
-class StoreManager:
+    def get_info(self): # Поліморфізм
+        return f"[Процедура]    {super().get_info()} (Кабінет: {self.room})"
+class ClinicRegistry:
     def __init__(self):
-        self._inventory = []
+        self.appointments = []
 
-    def add_product(self, product: Product):
-        self._inventory.append(product)
-        print(f"✅ Успішно додано: {product.get_info()}")
+    def add(self, app):
+        self.appointments.append(app)
+        self.appointments.sort() # Авто-сортування завдяки __lt__
 
-    def show_all(self):
-        print("\n--- Каталог товарів ---")
-        if not self._inventory:
-            print("Каталог порожній.")
-        for p in self._inventory:
-            print(p.get_info())
-        print("-----------------------")
-
-# 5. Блок інтерактивної демонстрації
-if __name__ == "__main__":
-    manager = StoreManager()
-
+    def show(self):
+        print("\n=== ГРАФІК ПРИЙОМІВ ===")
+        for a in self.appointments:
+            print(a.get_info())
+def main():
+    registry = ClinicRegistry()
+    
     while True:
-        print("\n=== Меню управління магазином ===")
-        print("1. Додати звичайний товар")
-        print("2. Додати акційний товар")
-        print("3. Додати преміум товар")
-        print("4. Показати каталог")
-        print("5. Створити помилку (Краш-тест)")
-        print("0. Вийти")
+        print("\n--- Додавання нового запису (або 'exit' для виходу) ---")
+        name = input("ПІБ пацієнта: ")
+        if name.lower() == 'exit': break
         
-        choice = input("Оберіть дію: ")
-
-        if choice == "0":
-            print("Роботу завершено.")
-            break
-        
-        elif choice == "4":
-            manager.show_all()
+        try:
+            age = int(input("Вік: "))
+            blood = input("Група крові: ")
+            time = input("Час (ГГ:ХХ): ")
+            price = float(input("Вартість: "))
             
-        elif choice == "5":
-            try:
-                print("\n[Спроба створити товар з ціною -500]")
-                # Цей код викличе ValueError з сетера base_price
-                invalid_product = Product("Бракована куртка", Category.CLOTHING, -500)
-            except ValueError as e:
-                print(f"❌ СПІЙМАНО ПОМИЛКУ: {e}")
-                
-        elif choice in ["1", "2", "3"]:
-            try:
-                name = input("Введіть назву товару: ")
-                
-                print("Доступні категорії: 1-Одяг, 2-Взуття, 3-Аксесуари")
-                cat_input = input("Оберіть категорію: ")
-                if cat_input == "1": category = Category.CLOTHING
-                elif cat_input == "2": category = Category.SHOES
-                elif cat_input == "3": category = Category.ACCESSORIES
-                else:
-                    raise ValueError("Невідома категорія!")
+            # Створюємо картку
+            card = PatientCard(name, age, blood)
+            
+            print("Тип: 1 - Консультація, 2 - Процедура")
+            choice = input("Вибір: ")
+            
+            if choice == "1":
+                reason = input("Причина візиту: ")
+                record = Consultation(card, DoctorSpecialty.THERAPIST, time, price, reason)
+            else:
+                room = input("Номер кабінету: ")
+                record = Procedure(card, DoctorSpecialty.THERAPIST, time, price, room)
+            
+            registry.add(record)
+            print("✅ Запис успішно додано!")
+            
+        except ValueError as e:
+            # Ось тут ми ловимо помилки з нашого "Краш-тесту"
+            print(f"❌ ПОМИЛКА ДАНИХ: {e}")
+        except Exception as e:
+            print(f"❌ Щось пішло не так: {e}")
 
-                base_price = float(input("Введіть базову ціну (грн): "))
+    registry.show()
 
-                if choice == "1":
-                    product = Product(name, category, base_price)
-                elif choice == "2":
-                    discount = float(input("Введіть відсоток знижки: "))
-                    product = DiscountedProduct(name, category, base_price, discount)
-                elif choice == "3":
-                    fee = float(input("Введіть вартість пакування (грн): "))
-                    product = PremiumProduct(name, category, base_price, fee)
-
-                manager.add_product(product)
-
-            # Перехоплення помилок перетворення типів (наприклад, літери замість цифр)
-            # та помилок нашої бізнес-логіки (від'ємна ціна тощо)
-            except ValueError as e:
-                print(f"❌ ПОМИЛКА ВВЕДЕННЯ/ВАЛІДАЦІЇ: {e}")
-                print("Спробуйте додати товар ще раз, використовуючи коректні дані.")
-        else:
-            print("❌ Невідома команда.")
+if __name__ == "__main__":
+    main()
