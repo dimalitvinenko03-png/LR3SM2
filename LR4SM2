@@ -1,0 +1,170 @@
+import time
+from enum import Enum
+from dataclasses import dataclass
+from datetime import datetime
+
+# Перелічення спеціалізацій
+class DoctorSpecialty(Enum):
+    THERAPIST = "Терапевт"
+    STOMATOLOGIST = "Стоматолог"
+    SURGEON = "Хірург"
+
+# Dataclass для картки пацієнта
+@dataclass
+class PatientCard:
+    full_name: str
+    age: int
+    blood_group: str
+
+class Appointment:
+    def __init__(self, patient: PatientCard, specialty: DoctorSpecialty, time_str: str, base_price: float):
+        # "Архітектурний краш-тест" з попередньої версії
+        if patient.age <= 0 or patient.age > 120:
+            raise ValueError(f"Некоректний вік: {patient.age}. Пацієнт має бути живою людиною!")
+        if base_price < 0:
+            raise ValueError(f"Ціна {base_price} не може бути від'ємною!")
+
+        self.patient = patient
+        self.specialty = specialty
+        # Перетворюємо рядок у формат часу
+        self.time = datetime.strptime(time_str, "%H:%M")
+        self._price = base_price
+        self.status = "ОЧІКУЄ"
+
+    # Рядкове представлення для інтерфейсу користувача
+    def __str__(self):
+        return f"{self.time.strftime('%H:%M')} | {self.patient.full_name} ({self.specialty.value}) | {self._price} грн | Стан: {self.status}"
+
+    # Офіційне представлення для розробника (логів, колекцій)
+    def __repr__(self):
+        return f"Appointment(patient='{self.patient.full_name}', time='{self.time.strftime('%H:%M')}', price={self._price})"
+
+    # Завдання 1: Математика бізнесу (перевантаження +)
+    # Повертає абсолютно новий об'єкт для збереження історії фінансових операцій
+    def __add__(self, extra_cost):
+        if isinstance(extra_cost, (int, float)):
+            if extra_cost < 0:
+                raise ValueError("Сервісний збір не може бути від'ємним.")
+            new_apt = Appointment(self.patient, self.specialty, self.time.strftime("%H:%M"), self._price + extra_cost)
+            new_apt.status = self.status
+            return new_apt
+        raise TypeError("Додавати можна лише числа.")
+
+    # Завдання 3: Контекстний менеджер та Time-Out
+    def __enter__(self):
+        print(f"\n[Система БД] Встановлення з'єднання для запису '{self.patient.full_name}'...")
+        self.status = "ОБРОБКА"
+        self._start_time = time.time()
+        return self
+
+    def __exit__(self, exc_type, exc_val, traceback):
+        elapsed = time.time() - self._start_time
+        # Якщо транзакція триває довше 1.5 сек - імітуємо Time-Out
+        if elapsed > 1.5:
+            self.status = "Expired"
+            print(f"[Система БД] Помилка: Перевищено час очікування ({elapsed:.2f} сек). Статус: Expired.")
+        elif exc_type:
+            self.status = "Помилка Оформлення"
+            print(f"[Система БД] Збій під час транзакції: {exc_val}")
+        else:
+            self.status = "ПІДТВЕРДЖЕНО"
+            print("[Система БД] Транзакцію успішно завершено.")
+
+class Consultation(Appointment):
+    def __init__(self, patient, specialty, time_str, base_price, reason):
+        super().__init__(patient, specialty, time_str, base_price)
+        self.reason = reason
+
+    def __str__(self):
+        return f"[Консультація] {super().__str__()} (Причина: {self.reason})"
+
+class Procedure(Appointment):
+    def __init__(self, patient, specialty, time_str, base_price, room):
+        super().__init__(patient, specialty, time_str, base_price)
+        self.room = room
+
+    def __str__(self):
+        return f"[Процедура]    {super().__str__()} (Кабінет: {self.room})"
+
+class ClinicRegistry:
+    def __init__(self):
+        self._appointments = []
+
+    def add(self, apt):
+        self._appointments.append(apt)
+
+    # Завдання 2: Обмеження ітерації (Сортування від найдешевших до найдорожчих)
+    def __iter__(self):
+        sorted_by_price = sorted(self._appointments, key=lambda x: x._price)
+        return iter(sorted_by_price)
+
+    def show(self):
+        print("\n=== ГРАФІК ПРИЙОМІВ (Автосортування за вартістю) ===")
+        if not self._appointments:
+            print("Записів немає.")
+        # Тут автоматично спрацьовує наш кастомний __iter__
+        for a in self:
+            print(a)
+
+def main():
+    registry = ClinicRegistry()
+
+    while True:
+        print("\n--- Створення нового запису (або 'exit' для виходу) ---")
+        name = input("ПІБ пацієнта: ").strip()
+        if name.lower() == 'exit':
+            break
+
+        try:
+            age = int(input("Вік: "))
+            blood = input("Група крові: ")
+            time_str = input("Час (ГГ:ХХ): ")
+            price = float(input("Вартість (грн): "))
+
+            # Створюємо картку пацієнта
+            card = PatientCard(name, age, blood)
+
+            print("Тип: 1 - Консультація, 2 - Процедура")
+            choice = input("Вибір: ")
+
+            if choice == "1":
+                reason = input("Причина візиту: ")
+                record = Consultation(card, DoctorSpecialty.THERAPIST, time_str, price, reason)
+            else:
+                room = input("Номер кабінету: ")
+                record = Procedure(card, DoctorSpecialty.SURGEON, time_str, price, room)
+
+            # --- Інтеграція Завдання 1 (__add__) у бізнес-процес ---
+            add_fee = input("Додати терміновий сервісний збір? (так/ні): ").strip().lower()
+            if add_fee == 'так':
+                fee = float(input("Сума збору (грн): "))
+                record = record + fee  # Виклик магічного методу __add__
+                print(f"Вартість оновлено. Поточна ціна: {record._price} грн.")
+
+            # --- Інтеграція Завдання 3 (__enter__, __exit__) у бізнес-процес ---
+            print("\nСпроба збереження до бази даних...")
+            delay_input = 10
+            delay = float(delay_input) if delay_input else 0
+
+            with record as active_record:
+                time.sleep(delay)  # Штучна затримка для перевірки Time-Out
+
+            registry.add(record)
+            print("✅ Запис успішно додано до реєстру!")
+
+        except ValueError as e:
+            # Обробляємо наші "краш-тести"
+            print(f"❌ ПОМИЛКА ДАНИХ: {e}")
+        except Exception as e:
+            print(f"❌ Системна помилка: {e}")
+
+    # Після виходу з циклу друкуємо результати
+    registry.show()
+    
+    # Демонстрація різниці між __str__ та __repr__ для звіту
+    print("\n=== СЛУЖБОВА ІНФОРМАЦІЯ ДЛЯ РОЗРОБНИКА ===")
+    print("Внутрішнє представлення списку (__repr__):")
+    print(repr(registry._appointments))
+
+if __name__ == "__main__":
+    main()
